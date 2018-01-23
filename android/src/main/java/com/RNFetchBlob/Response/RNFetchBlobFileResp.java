@@ -34,7 +34,7 @@ public class RNFetchBlobFileResp extends ResponseBody {
     ReactApplicationContext rctContext;
     FileOutputStream ofStream;
 
-    public RNFetchBlobFileResp(ReactApplicationContext ctx, String taskId, ResponseBody body, String path, boolean overwrite) throws IOException {
+    public RNFetchBlobFileResp(ReactApplicationContext ctx, String taskId, ResponseBody body, String path) throws IOException {
         super();
         this.rctContext = ctx;
         this.mTaskId = taskId;
@@ -42,16 +42,10 @@ public class RNFetchBlobFileResp extends ResponseBody {
         assert path != null;
         this.mPath = path;
         if (path != null) {
-            boolean appendToExistingFile = !overwrite;
+            boolean appendToExistingFile = path.contains("?append=true");
             path = path.replace("?append=true", "");
             mPath = path;
             File f = new File(path);
-
-            File parent = f.getParentFile();
-            if(!parent.exists() && !parent.mkdirs()){
-                throw new IllegalStateException("Couldn't create dir: " + parent);
-            }
-
             if(f.exists() == false)
                 f.createNewFile();
             ofStream = new FileOutputStream(new File(path), appendToExistingFile);
@@ -81,6 +75,7 @@ public class RNFetchBlobFileResp extends ResponseBody {
                 byte[] bytes = new byte[(int) byteCount];
                 long read = originalBody.byteStream().read(bytes, 0, (int) byteCount);
                 bytesDownloaded += read > 0 ? read : 0;
+                Log.i("bytes downloaded", String.valueOf(byteCount) + "/" + String.valueOf(read) + "=" + String.valueOf(bytesDownloaded));
                 if (read > 0) {
                     ofStream.write(bytes, 0, (int) read);
                 }

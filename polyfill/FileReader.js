@@ -47,15 +47,15 @@ export default class FileReader extends EventTarget {
   }
 
   abort() {
-    log.verbose('abort')
+    log.verbose('abort', b, label)
   }
 
   readAsArrayBuffer(b:Blob) {
-    log.verbose('readAsArrayBuffer', b)
+    log.verbose('readAsArrayBuffer', b, label)
   }
 
   readAsBinaryString(b:Blob) {
-    log.verbose('readAsBinaryString', b)
+    log.verbose('readAsBinaryString', b, label)
   }
 
   readAsText(b:Blob, label:?string) {
@@ -63,7 +63,7 @@ export default class FileReader extends EventTarget {
   }
 
   readAsDataURL(b:Blob) {
-    log.verbose('readAsDataURL', b)
+    log.verbose('readAsDataURL', b, label)
   }
 
   dispatchEvent(event, e) {
@@ -78,7 +78,7 @@ export default class FileReader extends EventTarget {
 
   // getters and setters
 
-  get readyState() {
+  get readState() {
     return this._readyState
   }
 

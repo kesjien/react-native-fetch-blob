@@ -32,6 +32,7 @@ class RNFetchBlobFetchPolyfill {
       options.headers['Content-Type'] = ctype || ctypeH
       options.headers['content-type'] = ctype || ctypeH
       options.method = options.method || 'GET'
+
       if(body) {
         // When the request body is an instance of FormData, create a Blob cache
         // to upload the body.
@@ -46,7 +47,7 @@ class RNFetchBlobFetchPolyfill {
         // When request body is a Blob, use file URI of the Blob as request body.
         else if (body.isRNFetchBlobPolyfill)
           promise = Promise.resolve(RNFetchBlob.wrap(body.blobPath))
-        else if (typeof body !== 'object' && options.headers['Content-Type'] !== 'application/json')
+        else if (typeof body !== 'object')
           promise = Promise.resolve(JSON.stringify(body))
         else if (typeof body !== 'string')
           promise = Promise.resolve(body.toString())
@@ -54,41 +55,28 @@ class RNFetchBlobFetchPolyfill {
         else
           promise = Promise.resolve(body)
       }
+
       // task is a progress reportable and cancellable Promise, however,
       // task.then is not, so we have to extend task.then with progress and
       // cancel function
-      let progressHandler, uploadHandler, cancelHandler
-      let statefulPromise = promise
+      let task = promise
           .then((body) => {
-            let task = RNFetchBlob.config(config)
-              .fetch(options.method, url, options.headers, body)
-            if(progressHandler)
-              task.progress(progressHandler)
-            if(uploadHandler)
-              task.uploadProgress(uploadHandler)
-            if(cancelHandler)
-              task.cancel()
-            return task.then((resp) => {
-              log.verbose('response', resp)
-              // release blob cache created when sending request
-              if(blobCache !== null && blobCache instanceof Blob)
-                blobCache.close()
-              return Promise.resolve(new RNFetchBlobFetchRepsonse(resp))
-            })
+            return RNFetchBlob.config(config)
+            .fetch(options.method, url, options.headers, body)
           })
 
+      let statefulPromise = task.then((resp) => {
+        log.verbose('response', resp)
+        // release blob cache created when sending request
+        if(blobCache !== null && blobCache instanceof Blob)
+          blobCache.close()
+        return Promise.resolve(new RNFetchBlobFetchRepsonse(resp))
+      })
+
       // extend task.then progress with report and cancelling functions
-      statefulPromise.progress = (fn) => {
-        progressHandler = fn
-      }
-      statefulPromise.uploadProgress = (fn) => {
-        uploadHandler = fn
-      }
-      statefulPromise.cancel = () => {
-        cancelHandler = true
-        if(task.cancel)
-          task.cancel()
-      }
+      statefulPromise.cancel = task.cancel
+      statefulPromise.progress = task.progress
+      statefulPromise.uploadProgress = task.uploadProgress
 
       return statefulPromise
 

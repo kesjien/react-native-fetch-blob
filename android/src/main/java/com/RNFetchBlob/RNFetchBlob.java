@@ -1,13 +1,9 @@
 package com.RNFetchBlob;
 
-import android.app.Activity;
-import android.app.DownloadManager;
 import android.content.Intent;
 import android.net.Uri;
 
-import com.facebook.react.bridge.ActivityEventListener;
 import com.facebook.react.bridge.Callback;
-import com.facebook.react.bridge.LifecycleEventListener;
 import com.facebook.react.bridge.Promise;
 import com.facebook.react.bridge.ReactApplicationContext;
 import com.facebook.react.bridge.ReactContextBaseJavaModule;
@@ -15,63 +11,23 @@ import com.facebook.react.bridge.ReactMethod;
 import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.ReadableMap;
 
-// Cookies
-import com.facebook.react.bridge.WritableMap;
-import com.facebook.react.modules.network.ForwardingCookieHandler;
-import com.facebook.react.modules.network.CookieJarContainer;
-import com.facebook.react.modules.network.OkHttpClientProvider;
-import okhttp3.OkHttpClient;
-import okhttp3.JavaNetCookieJar;
-
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import static android.app.Activity.RESULT_OK;
-import static com.RNFetchBlob.RNFetchBlobConst.GET_CONTENT_INTENT;
-
 public class RNFetchBlob extends ReactContextBaseJavaModule {
-
-    // Cookies
-    private final ForwardingCookieHandler mCookieHandler;
-    private final CookieJarContainer mCookieJarContainer;
-    private final OkHttpClient mClient;
 
     static ReactApplicationContext RCTContext;
     static LinkedBlockingQueue<Runnable> taskQueue = new LinkedBlockingQueue<>();
     static ThreadPoolExecutor threadPool = new ThreadPoolExecutor(5, 10, 5000, TimeUnit.MILLISECONDS, taskQueue);
     static LinkedBlockingQueue<Runnable> fsTaskQueue = new LinkedBlockingQueue<>();
     static ThreadPoolExecutor fsThreadPool = new ThreadPoolExecutor(2, 10, 5000, TimeUnit.MILLISECONDS, taskQueue);
-    static public boolean ActionViewVisible = false;
-    static HashMap<Integer, Promise> promiseTable = new HashMap<>();
 
     public RNFetchBlob(ReactApplicationContext reactContext) {
 
         super(reactContext);
-
-        mClient = OkHttpClientProvider.getOkHttpClient();
-        mCookieHandler = new ForwardingCookieHandler(reactContext);
-        mCookieJarContainer = (CookieJarContainer) mClient.cookieJar();
-        mCookieJarContainer.setCookieJar(new JavaNetCookieJar(mCookieHandler));
-
         RCTContext = reactContext;
-        reactContext.addActivityEventListener(new ActivityEventListener() {
-            @Override
-            public void onActivityResult(Activity activity, int requestCode, int resultCode, Intent data) {
-                if(requestCode == GET_CONTENT_INTENT && resultCode == RESULT_OK) {
-                    Uri d = data.getData();
-                    promiseTable.get(GET_CONTENT_INTENT).resolve(d.toString());
-                    promiseTable.remove(GET_CONTENT_INTENT);
-                }
-            }
-
-            @Override
-            public void onNewIntent(Intent intent) {
-
-            }
-        });
     }
 
     @Override
@@ -96,33 +52,14 @@ public class RNFetchBlob extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void actionViewIntent(String path, String mime, final Promise promise) {
+    public void actionViewIntent(String path, String mime, Promise promise) {
         try {
             Intent intent= new Intent(Intent.ACTION_VIEW)
                     .setDataAndType(Uri.parse("file://" + path), mime);
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
             this.getReactApplicationContext().startActivity(intent);
-            ActionViewVisible = true;
-
-            final LifecycleEventListener listener = new LifecycleEventListener() {
-                @Override
-                public void onHostResume() {
-                    if(ActionViewVisible)
-                        promise.resolve(null);
-                    RCTContext.removeLifecycleEventListener(this);
-                }
-
-                @Override
-                public void onHostPause() {
-
-                }
-
-                @Override
-                public void onHostDestroy() {
-
-                }
-            };
-            RCTContext.addLifecycleEventListener(listener);
+            promise.resolve(null);
         } catch(Exception ex) {
             promise.reject(ex.getLocalizedMessage());
         }
@@ -305,17 +242,6 @@ public class RNFetchBlob extends ReactContextBaseJavaModule {
     }
 
     @ReactMethod
-    public void df(final Callback callback) {
-        fsThreadPool.execute(new Runnable() {
-            @Override
-            public void run() {
-                RNFetchBlobFS.df(callback);
-            }
-        });
-    }
-
-
-    @ReactMethod
     public void enableUploadProgressReport(String taskId, int interval, int count) {
         RNFetchBlobProgressConfig config = new RNFetchBlobProgressConfig(true, interval, count, RNFetchBlobProgressConfig.ReportType.Upload);
         RNFetchBlobReq.uploadProgressReport.put(taskId, config);
@@ -323,51 +249,12 @@ public class RNFetchBlob extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void fetchBlob(ReadableMap options, String taskId, String method, String url, ReadableMap headers, String body, final Callback callback) {
-        new RNFetchBlobReq(options, taskId, method, url, headers, body, null, mClient, callback).run();
-}
+        new RNFetchBlobReq(options, taskId, method, url, headers, body, null, callback).run();
+    }
 
     @ReactMethod
     public void fetchBlobForm(ReadableMap options, String taskId, String method, String url, ReadableMap headers, ReadableArray body, final Callback callback) {
-        new RNFetchBlobReq(options, taskId, method, url, headers, null, body, mClient, callback).run();
-    }
-
-    @ReactMethod
-    public void getContentIntent(String mime, Promise promise) {
-        Intent i = new Intent(Intent.ACTION_GET_CONTENT);
-        if(mime != null)
-            i.setType(mime);
-        else
-            i.setType("*/*");
-        promiseTable.put(GET_CONTENT_INTENT, promise);
-        this.getReactApplicationContext().startActivityForResult(i, GET_CONTENT_INTENT, null);
-
-    }
-
-    @ReactMethod
-    public void addCompleteDownload (ReadableMap config, Promise promise) {
-        DownloadManager dm = (DownloadManager) RNFetchBlob.RCTContext.getSystemService(RNFetchBlob.RCTContext.DOWNLOAD_SERVICE);
-        String path = RNFetchBlobFS.normalizePath(config.getString("path"));
-        if(path == null) {
-            promise.reject("RNFetchblob.addCompleteDownload can not resolve URI:" + config.getString("path"), "RNFetchblob.addCompleteDownload can not resolve URI:" + path);
-            return;
-        }
-        try {
-            WritableMap stat = RNFetchBlobFS.statFile(path);
-            dm.addCompletedDownload(
-                    config.hasKey("title") ? config.getString("title") : "",
-                    config.hasKey("description") ? config.getString("description") : "",
-                    true,
-                    config.hasKey("mime") ? config.getString("mime") : null,
-                    path,
-                    Long.valueOf(stat.getString("size")),
-                    config.hasKey("showNotification") && config.getBoolean("showNotification")
-            );
-            promise.resolve(null);
-        }
-        catch(Exception ex) {
-            promise.reject("RNFetchblob.addCompleteDownload failed", ex.getStackTrace().toString());
-        }
-
+        new RNFetchBlobReq(options, taskId, method, url, headers, null, body, callback).run();
     }
 
 }

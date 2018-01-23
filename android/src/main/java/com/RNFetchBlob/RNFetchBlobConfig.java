@@ -16,10 +16,7 @@ public class RNFetchBlobConfig {
     public String key;
     public String mime;
     public Boolean auto;
-    public Boolean overwrite = true;
     public long timeout = 60000;
-    public Boolean increment = false;
-    public Boolean followRedirect = true;
     public ReadableArray binaryContentTypes = null;
 
     RNFetchBlobConfig(ReadableMap options) {
@@ -34,17 +31,8 @@ public class RNFetchBlobConfig {
         }
         if(options.hasKey("binaryContentTypes"))
             this.binaryContentTypes = options.getArray("binaryContentTypes");
-        if(this.path != null && path.toLowerCase().contains("?append=true")) {
-            this.overwrite = false;
-        }
-        if(options.hasKey("overwrite"))
-            this.overwrite = options.getBoolean("overwrite");
-        if(options.hasKey("followRedirect")) {
-            this.followRedirect = options.getBoolean("followRedirect");
-        }
         this.key = options.hasKey("key") ? options.getString("key") : null;
         this.mime = options.hasKey("contentType") ? options.getString("contentType") : null;
-        this.increment = options.hasKey("increment") ? options.getBoolean("increment") : false;
         this.auto = options.hasKey("auto") ? options.getBoolean("auto") : false;
         if(options.hasKey("timeout")) {
             this.timeout = options.getInt("timeout");

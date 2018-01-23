@@ -6,9 +6,10 @@
 //  Copyright © 2016 wkh237. All rights reserved.
 //
 
-
+#import "RCTLog.h"
 #import <Foundation/Foundation.h>
-#import "RNFetchBlob.h"
+#import "RCTBridge.h"
+#import "RCTEventDispatcher.h"
 #import "RNFetchBlobFS.h"
 #import "RNFetchBlobNetwork.h"
 #import "RNFetchBlobConst.h"
@@ -17,18 +18,6 @@
 #import <CommonCrypto/CommonDigest.h>
 #import "RNFetchBlobProgress.h"
 
-#if __has_include(<React/RCTAssert.h>)
-#import <React/RCTRootView.h>
-#import <React/RCTLog.h>
-#import <React/RCTEventDispatcher.h>
-#import <React/RCTBridge.h>
-#else
-#import "RCTRootView.h"
-#import "RCTLog.h"
-#import "RCTEventDispatcher.h"
-#import "RCTBridge.h"
-#endif
-
 ////////////////////////////////////////
 //
 //  HTTP request handler
@@ -36,30 +25,8 @@
 ////////////////////////////////////////
 
 NSMapTable * taskTable;
-NSMapTable * expirationTable;
 NSMutableDictionary * progressTable;
 NSMutableDictionary * uploadProgressTable;
-
-__attribute__((constructor))
-static void initialize_tables() {
-    if(expirationTable == nil)
-    {
-        expirationTable = [[NSMapTable alloc] init];
-    }
-    if(taskTable == nil)
-    {
-        taskTable = [[NSMapTable alloc] init];
-    }
-    if(progressTable == nil)
-    {
-        progressTable = [[NSMutableDictionary alloc] init];
-    }
-    if(uploadProgressTable == nil)
-    {
-        uploadProgressTable = [[NSMutableDictionary alloc] init];
-    }
-}
-
 
 typedef NS_ENUM(NSUInteger, ResponseFormat) {
     UTF8,
@@ -72,7 +39,6 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
 {
     BOOL * respFile;
     BOOL isNewPart;
-    BOOL * isIncrement;
     NSMutableData * partBuffer;
     NSString * destPath;
     NSOutputStream * writeStream;
@@ -81,8 +47,6 @@ typedef NS_ENUM(NSUInteger, ResponseFormat) {
     NSInteger respStatus;
     NSMutableArray * redirects;
     ResponseFormat responseFormat;
-    BOOL * followRedirect;
-    BOOL backgroundTask;
 }
 
 @end
@@ -109,24 +73,27 @@ NSOperationQueue *taskQueue;
         taskQueue = [[NSOperationQueue alloc] init];
         taskQueue.maxConcurrentOperationCount = 10;
     }
+    if(taskTable == nil) {
+        taskTable = [[NSMapTable alloc] init];
+    }
+    if(progressTable == nil)
+    {
+        progressTable = [[NSMutableDictionary alloc] init];
+    }
+    if(uploadProgressTable == nil)
+    {
+        uploadProgressTable = [[NSMutableDictionary alloc] init];
+    }
     return self;
 }
 
 + (void) enableProgressReport:(NSString *) taskId config:(RNFetchBlobProgress *)config
 {
-    if(progressTable == nil)
-    {
-        progressTable = [[NSMutableDictionary alloc] init];
-    }
     [progressTable setValue:config forKey:taskId];
 }
 
 + (void) enableUploadProgress:(NSString *) taskId config:(RNFetchBlobProgress *)config
 {
-    if(uploadProgressTable == nil)
-    {
-        uploadProgressTable = [[NSMutableDictionary alloc] init];
-    }
     [uploadProgressTable setValue:config forKey:taskId];
 }
 
@@ -169,14 +136,9 @@ NSOperationQueue *taskQueue;
     self.expectedBytes = 0;
     self.receivedBytes = 0;
     self.options = options;
-    
-    backgroundTask = [options valueForKey:@"IOSBackgroundTask"] == nil ? NO : [[options valueForKey:@"IOSBackgroundTask"] boolValue];
-    followRedirect = [options valueForKey:@"followRedirect"] == nil ? YES : [[options valueForKey:@"followRedirect"] boolValue];
-    isIncrement = [options valueForKey:@"increment"] == nil ? NO : [[options valueForKey:@"increment"] boolValue];
     redirects = [[NSMutableArray alloc] init];
-    if(req.URL != nil)
-        [redirects addObject:req.URL.absoluteString];
-
+    [redirects addObject:req.URL.absoluteString];
+    
     // set response format
     NSString * rnfbResp = [req.allHTTPHeaderFields valueForKey:@"RNFB-Response"];
     if([[rnfbResp lowercaseString] isEqualToString:@"base64"])
@@ -194,15 +156,7 @@ NSOperationQueue *taskQueue;
     bodyLength = contentLength;
 
     // the session trust any SSL certification
-    NSURLSessionConfiguration *defaultConfigObject;
-
-    defaultConfigObject = [NSURLSessionConfiguration defaultSessionConfiguration];
-
-    if(backgroundTask)
-    {
-        defaultConfigObject = [NSURLSessionConfiguration backgroundSessionConfigurationWithIdentifier:taskId];
-    }
-
+    NSURLSessionConfiguration *defaultConfigObject = [NSURLSessionConfiguration defaultSessionConfiguration];
     // set request timeout
     float timeout = [options valueForKey:@"timeout"] == nil ? -1 : [[options valueForKey:@"timeout"] floatValue];
     if(timeout > 0)
@@ -239,36 +193,13 @@ NSOperationQueue *taskQueue;
         respData = [[NSMutableData alloc] init];
         respFile = NO;
     }
-
-    __block NSURLSessionDataTask * task = [session dataTaskWithRequest:req];
+    NSURLSessionDataTask * task = [session dataTaskWithRequest:req];
     [taskTable setObject:task forKey:taskId];
     [task resume];
 
     // network status indicator
     if([[options objectForKey:CONFIG_INDICATOR] boolValue] == YES)
         [[UIApplication sharedApplication] setNetworkActivityIndicatorVisible:YES];
-    __block UIApplication * app = [UIApplication sharedApplication];
-
-}
-
-// #115 Invoke fetch.expire event on those expired requests so that the expired event can be handled
-+ (void) emitExpiredTasks
-{
-    NSEnumerator * emu =  [expirationTable keyEnumerator];
-    NSString * key;
-
-    while((key = [emu nextObject]))
-    {
-        RCTBridge * bridge = [RNFetchBlob getRCTBridge];
-        NSData * args = @{ @"taskId": key };
-        [bridge.eventDispatcher sendDeviceEventWithName:EVENT_EXPIRE body:args];
-
-    }
-
-    // clear expired task entries
-    [expirationTable removeAllObjects];
-    expirationTable = [[NSMapTable alloc] init];
-
 }
 
 ////////////////////////////////////////
@@ -280,8 +211,6 @@ NSOperationQueue *taskQueue;
 
 #pragma mark NSURLSession delegate methods
 
-
-#pragma mark - Received Response
 // set expected content length on response received
 - (void) URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler
 {
@@ -358,19 +287,8 @@ NSOperationQueue *taskQueue;
                      @"redirects": redirects,
                      @"respType" : respType,
                      @"timeout" : @NO,
-                     @"status": [NSNumber numberWithInteger:statusCode]
+                     @"status": [NSString stringWithFormat:@"%d", statusCode ]
                     };
-
-#pragma mark - handling cookies
-        // # 153 get cookies
-        if(response.URL != nil)
-        {
-            NSHTTPCookieStorage * cookieStore = [NSHTTPCookieStorage sharedHTTPCookieStorage];
-            NSArray<NSHTTPCookie *> * cookies = [NSHTTPCookie cookiesWithResponseHeaderFields: headers forURL:response.URL];
-            if(cookies != nil && [cookies count] > 0) {
-                [cookieStore setCookies:cookies forURL:response.URL mainDocumentURL:nil];
-            }
-        }
 
         [self.bridge.eventDispatcher
          sendDeviceEventWithName: EVENT_STATE_CHANGE
@@ -378,7 +296,6 @@ NSOperationQueue *taskQueue;
         ];
         headers = nil;
         respInfo = nil;
-
     }
     else
         NSLog(@"oops");
@@ -392,11 +309,7 @@ NSOperationQueue *taskQueue;
             {
                 [fm createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:NULL error:nil];
             }
-            BOOL overwrite = [options valueForKey:@"overwrite"] == nil ? YES : [[options valueForKey:@"overwrite"] boolValue];
             BOOL appendToExistingFile = [destPath RNFBContainsString:@"?append=true"];
-
-            appendToExistingFile = !overwrite;
-
             // For solving #141 append response data if the file already exists
             // base on PR#139 @kejinliang
             if(appendToExistingFile)
@@ -407,7 +320,7 @@ NSOperationQueue *taskQueue;
             {
                 [fm createFileAtPath:destPath contents:[[NSData alloc] init] attributes:nil];
             }
-            writeStream = [[NSOutputStream alloc] initToFileAtPath:destPath append:appendToExistingFile];
+            writeStream = [[NSOutputStream alloc] initToFileAtPath:destPath append:YES];
             [writeStream scheduleInRunLoop:[NSRunLoop currentRunLoop] forMode:NSRunLoopCommonModes];
             [writeStream open];
         }
@@ -430,16 +343,9 @@ NSOperationQueue *taskQueue;
         [partBuffer appendData:data];
         return ;
     }
-
+    
     NSNumber * received = [NSNumber numberWithLong:[data length]];
     receivedBytes += [received longValue];
-    NSString * chunkString = @"";
-
-    if(isIncrement == YES)
-    {
-        chunkString = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-    }
-
     if(respFile == NO)
     {
         [respData appendData:data];
@@ -459,8 +365,7 @@ NSOperationQueue *taskQueue;
          body:@{
                 @"taskId": taskId,
                 @"written": [NSString stringWithFormat:@"%d", receivedBytes],
-                @"total": [NSString stringWithFormat:@"%d", expectedBytes],
-                @"chunk": chunkString
+                @"total": [NSString stringWithFormat:@"%d", expectedBytes]
             }
          ];
     }
@@ -494,46 +399,47 @@ NSOperationQueue *taskQueue;
     {
         errMsg = [error localizedDescription];
     }
-
-    if(respFile == YES)
+    else
     {
-        [writeStream close];
-        rnfbRespType = RESP_TYPE_PATH;
-        respStr = destPath;
-    }
-    // base64 response
-    else {
-        // #73 fix unicode data encoding issue :
-        // when response type is BASE64, we should first try to encode the response data to UTF8 format
-        // if it turns out not to be `nil` that means the response data contains valid UTF8 string,
-        // in order to properly encode the UTF8 string, use URL encoding before BASE64 encoding.
-        NSString * utf8 = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
-
-        if(responseFormat == BASE64)
+        if(respFile == YES)
         {
-            rnfbRespType = RESP_TYPE_BASE64;
-            respStr = [respData base64EncodedStringWithOptions:0];
+            [writeStream close];
+            rnfbRespType = RESP_TYPE_PATH;
+            respStr = destPath;
         }
-        else if (responseFormat == UTF8)
-        {
-            rnfbRespType = RESP_TYPE_UTF8;
-            respStr = utf8;
-        }
-        else
-        {
-            if(utf8 != nil)
+        // base64 response
+        else {
+            // #73 fix unicode data encoding issue :
+            // when response type is BASE64, we should first try to encode the response data to UTF8 format
+            // if it turns out not to be `nil` that means the response data contains valid UTF8 string,
+            // in order to properly encode the UTF8 string, use URL encoding before BASE64 encoding.
+            NSString * utf8 = [[NSString alloc] initWithData:respData encoding:NSUTF8StringEncoding];
+            
+            if(responseFormat == BASE64)
+            {
+                rnfbRespType = RESP_TYPE_BASE64;
+                respStr = [respData base64EncodedStringWithOptions:0];
+            }
+            else if (responseFormat == UTF8)
             {
                 rnfbRespType = RESP_TYPE_UTF8;
                 respStr = utf8;
             }
             else
             {
-                rnfbRespType = RESP_TYPE_BASE64;
-                respStr = [respData base64EncodedStringWithOptions:0];
+                if(utf8 != nil)
+                {
+                    rnfbRespType = RESP_TYPE_UTF8;
+                    respStr = utf8;
+                }
+                else
+                {
+                    rnfbRespType = RESP_TYPE_BASE64;
+                    respStr = [respData base64EncodedStringWithOptions:0];
+                }
             }
         }
     }
-
 
     callback(@[ errMsg, rnfbRespType, respStr]);
 
@@ -582,36 +488,39 @@ NSOperationQueue *taskQueue;
 
 - (void) URLSession:(NSURLSession *)session didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge completionHandler:(void (^)(NSURLSessionAuthChallengeDisposition, NSURLCredential * _Nullable credantial))completionHandler
 {
-    BOOL trusty = [options valueForKey:CONFIG_TRUSTY];
-    if(!trusty)
+    if([options valueForKey:CONFIG_TRUSTY] != nil)
     {
         completionHandler(NSURLSessionAuthChallengePerformDefaultHandling, [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust]);
     }
     else
     {
-        completionHandler(NSURLSessionAuthChallengeUseCredential, [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust]);
+        NSURLSessionAuthChallengeDisposition disposition = NSURLSessionAuthChallengePerformDefaultHandling;
+        __block NSURLCredential *credential = nil;
+        if ([challenge.protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust])
+        {
+            credential = [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust];
+            if (credential) {
+                disposition = NSURLSessionAuthChallengeUseCredential;
+            } else {
+                disposition = NSURLSessionAuthChallengePerformDefaultHandling;
+            }
+        }
+        else
+        {
+            disposition = NSURLSessionAuthChallengeCancelAuthenticationChallenge;
+            RCTLogWarn(@"counld not create connection with an unstrusted SSL certification, if you're going to create connection anyway, add `trusty:true` to RNFetchBlob.config");
+            [[UIApplication sharedApplication] setNetworkActivityIndicatorVisible:NO];
+        }
+        if (completionHandler) {
+            completionHandler(disposition, credential);
+        }
     }
-}
-
-
-- (void) URLSessionDidFinishEventsForBackgroundURLSession:(NSURLSession *)session
-{
-    NSLog(@"sess done in background");
 }
 
 - (void) URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest * _Nullable))completionHandler
 {
-
-    if(followRedirect)
-    {
-        if(request.URL != nil)
-            [redirects addObject:[request.URL absoluteString]];
-        completionHandler(request);
-    }
-    else
-    {
-        completionHandler(nil);
-    }
+    [redirects addObject:[request.URL absoluteString]];
+    completionHandler(request);
 }
 
 @end

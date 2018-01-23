@@ -1,6 +1,7 @@
 // Copyright 2016 wkh237@github. All rights reserved.
 // Use of this source code is governed by a MIT-style license that can be
 // found in the LICENSE file.
+// @flow
 
 import {
   NativeModules,
@@ -28,10 +29,7 @@ const dirs = {
     MovieDir : RNFetchBlob.MovieDir,
     DownloadDir : RNFetchBlob.DownloadDir,
     DCIMDir : RNFetchBlob.DCIMDir,
-    SDCardDir : RNFetchBlob.SDCardDir,
-    SDCardApplicationDir : RNFetchBlob.SDCardApplicationDir,
-    MainBundleDir : RNFetchBlob.MainBundleDir,
-    LibraryDir : RNFetchBlob.LibraryDir
+    SDCardDir : RNFetchBlob.SDCardDir
 }
 
 /**
@@ -140,15 +138,6 @@ function mkdir(path:string):Promise {
 }
 
 /**
- * Returns the path for the app group.
- * @param  {string} groupName Name of app group
- * @return {Promise}
- */
-function pathForAppGroup(groupName:string):Promise {
-  return RNFetchBlob.pathForAppGroup(groupName);
-}
-
-/**
  * Wrapper method of readStream.
  * @param  {string} path Path of the file.
  * @param  {'base64' | 'utf8' | 'ascii'} encoding Encoding of read stream.
@@ -173,12 +162,12 @@ function writeFile(path:string, data:string | Array<number>, encoding:?string):P
     return Promise.reject('Invalid argument "path" ')
   if(encoding.toLocaleLowerCase() === 'ascii') {
     if(!Array.isArray(data))
-      return Promise.reject(new Error(`Expected "data" is an Array when encoding is "ascii", however got ${typeof data}`))
+      Promise.reject(new Error(`Expected "data" is an Array when encoding is "ascii", however got ${typeof data}`))
     else
       return RNFetchBlob.writeFileArray(path, data, false);
   } else {
     if(typeof data !== 'string')
-      return Promise.reject(new Error(`Expected "data" is a String when encoding is "utf8" or "base64", however got ${typeof data}`))
+      Promise.reject(new Error(`Expected "data" is a String when encoding is "utf8" or "base64", however got ${typeof data}`))
     else
       return RNFetchBlob.writeFile(path, encoding, data, false);
   }
@@ -190,12 +179,12 @@ function appendFile(path:string, data:string | Array<number>, encoding:?string):
     return Promise.reject('Invalid argument "path" ')
   if(encoding.toLocaleLowerCase() === 'ascii') {
     if(!Array.isArray(data))
-      return Promise.reject(new Error(`Expected "data" is an Array when encoding is "ascii", however got ${typeof data}`))
+      Promise.reject(new Error(`Expected "data" is an Array when encoding is "ascii", however got ${typeof data}`))
     else
       return RNFetchBlob.writeFileArray(path, data, true);
   } else {
     if(typeof data !== 'string')
-      return Promise.reject(new Error(`Expected "data" is a String when encoding is "utf8" or "base64", however got ${typeof data}`))
+      Promise.reject(new Error(`Expected "data" is a String when encoding is "utf8" or "base64", however got ${typeof data}`))
     else
       return RNFetchBlob.writeFile(path, encoding, data, true);
   }
@@ -211,13 +200,8 @@ function stat(path:string):Promise<RNFetchBlobFile> {
     RNFetchBlob.stat(path, (err, stat) => {
       if(err)
         reject(new Error(err))
-      else {
-        if(stat) {
-          stat.size = parseInt(stat.size)
-          stat.lastModified = parseInt(stat.lastModified)
-        }
+      else
         resolve(stat)
-      }
     })
   })
 }
@@ -354,17 +338,6 @@ function isDir(path:string):Promise<bool, bool> {
 
 }
 
-function df():Promise<{ free : number, total : number }> {
-  return new Promise((resolve, reject) => {
-    RNFetchBlob.df((err, stat) => {
-      if(err)
-        reject(err)
-      else
-        resolve(stat)
-    })
-  })
-}
-
 export default {
   RNFetchBlobSession,
   unlink,
@@ -377,7 +350,6 @@ export default {
   writeStream,
   writeFile,
   appendFile,
-  pathForAppGroup,
   readFile,
   exists,
   createFile,
@@ -387,6 +359,5 @@ export default {
   scanFile,
   dirs,
   slice,
-  asset,
-  df
+  asset
 }

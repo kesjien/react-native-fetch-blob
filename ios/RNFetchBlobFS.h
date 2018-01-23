@@ -9,15 +9,8 @@
 #ifndef RNFetchBlobFS_h
 #define RNFetchBlobFS_h
 
-#import "RNFetchBlob.h"
 #import <Foundation/Foundation.h>
-
-#if __has_include(<React/RCTAssert.h>)
-#import <React/RCTBridgeModule.h>
-#else
 #import "RCTBridgeModule.h"
-#endif
-
 @import AssetsLibrary;
 
 @interface RNFetchBlobFS : NSObject <NSStreamDelegate>  {
@@ -46,13 +39,11 @@
 @property (nonatomic) BOOL appendData;
 
 // get dirs
-+ (NSString *) getMainBundleDir;
 + (NSString *) getTempPath;
 + (NSString *) getCacheDir;
 + (NSString *) getDocumentDir;
 + (NSString *) getTempPath:(NSString*)taskId withExtension:(NSString *)ext;
 + (NSString *) getPathOfAsset:(NSString *)assetURI;
-+ (NSString *) getPathForAppGroup:(NSString *)groupName;
 + (void) getPathFromUri:(NSString *)uri completionHandler:(void(^)(NSString * path, ALAssetRepresentation *asset)) onComplete;
 
 // fs methods
@@ -62,7 +53,7 @@
 + (void) exists:(NSString *) path callback:(RCTResponseSenderBlock)callback;
 + (void) writeFileArray:(NSString *)path data:(NSArray *)data append:(BOOL)append resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject;
 + (void) writeFile:(NSString *)path encoding:(NSString *)encoding data:(NSString *)data append:(BOOL)append resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject;
-+ (void) readFile:(NSString *)path encoding:(NSString *)encoding onComplete:(void (^)(NSData * content, NSString * errMsg))onComplete;
++ (void) readFile:(NSString *)path encoding:(NSString *)encoding resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject onComplete:(void (^)(NSData * content))onComplete;
 + (void) readAssetFile:(NSData *)assetUrl completionBlock:(void(^)(NSData * content))completionBlock failBlock:(void(^)(NSError * err))failBlock;
 + (void) slice:(NSString *)path
          dest:(NSString *)dest
@@ -74,7 +65,6 @@
 //+ (void) writeFileFromFile:(NSString *)src toFile:(NSString *)dest append:(BOOL)append;
 + (void) writeAssetToPath:(ALAssetRepresentation * )rep dest:(NSString *)dest;
 + (void) readStream:(NSString *)uri encoding:(NSString * )encoding bufferSize:(int)bufferSize tick:(int)tick streamId:(NSString *)streamId bridgeRef:(RCTBridge *)bridgeRef;
-+ (void) df:(RCTResponseSenderBlock)callback;
 
 // constructor
 - (id) init;
@@ -91,8 +81,6 @@
 
 - (void) closeInStream;
 - (void) closeOutStream;
-
-- (void) openFile:( NSString * _Nonnull ) uri;
 
 @end
 

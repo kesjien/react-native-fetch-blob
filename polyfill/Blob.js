@@ -73,7 +73,6 @@ export default class Blob extends EventTarget {
     cType = cType || {}
     this.cacheName = getBlobName()
     this.isRNFetchBlobPolyfill = true
-    this.isDerived = defer
     this.type = cType.type || 'text/plain'
     log.verbose('Blob constructor called', 'mime', this.type, 'type', typeof data, 'length', data?  data.length:0)
     this._ref = blobCacheDir + this.cacheName
@@ -113,7 +112,7 @@ export default class Blob extends EventTarget {
           formArray.push('\r\n--'+boundary+'\r\n')
           let part = parts[i]
           for(let j in part.headers) {
-            formArray.push(j + ': ' +part.headers[j] + '\r\n')
+            formArray.push(j + ': ' +part.headers[j] + ';\r\n')
           }
           formArray.push('\r\n')
           if(part.isRNFetchBlobPolyfill)
@@ -130,8 +129,6 @@ export default class Blob extends EventTarget {
     // Blob data from file path
     else if(typeof data === 'string' && data.startsWith('RNFetchBlob-file://')) {
       log.verbose('create Blob cache file from file path', data)
-      // set this flag so that we know this blob is a wrapper of an existing file
-      this._isReference = true
       this._ref = String(data).replace('RNFetchBlob-file://', '')
       let orgPath = this._ref
       if(defer)
@@ -231,26 +228,16 @@ export default class Blob extends EventTarget {
     if(this._closed)
       throw 'Blob has been released.'
     log.verbose('slice called', start, end, contentType)
-
-
     let resPath = blobCacheDir + getBlobName()
     let pass = false
     log.debug('fs.slice new blob will at', resPath)
     let result = new Blob(RNFetchBlob.wrap(resPath), { type : contentType }, true)
-    fs.exists(blobCacheDir)
-    .then((exist) => {
-      if(exist)
-        return Promise.resolve()
-      return fs.mkdir(blobCacheDir)
-    })
-    .then(() => fs.slice(this._ref, resPath, start, end))
-    .then((dest) => {
+    fs.slice(this._ref, resPath, start, end).then((dest) => {
       log.debug('fs.slice done', dest)
       result._invokeOnCreateEvent()
       pass = true
     })
     .catch((err) => {
-      console.warn('Blob.slice failed:', err)
       pass = true
     })
     log.debug('slice returning new Blob')
@@ -282,20 +269,6 @@ export default class Blob extends EventTarget {
     return fs.unlink(this._ref).catch((err) => {
       console.warn(err)
     })
-  }
-
-  safeClose() {
-    if(this._closed)
-      return Promise.reject('Blob has been released.')
-    this._closed = true
-    if(!this._isReference) {
-      return fs.unlink(this._ref).catch((err) => {
-        console.warn(err)
-      })   
-    }
-    else {
-      return Promise.resolve()
-    }
   }
 
   _invokeOnCreateEvent() {

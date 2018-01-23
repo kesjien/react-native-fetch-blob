@@ -7,7 +7,6 @@ import XMLHttpRequestEventTarget from './XMLHttpRequestEventTarget.js'
 import Log from '../utils/log.js'
 import Blob from './Blob.js'
 import ProgressEvent from './ProgressEvent.js'
-import URIUtil from '../utils/uri'
 
 const log = new Log('XMLHttpRequest')
 
@@ -31,9 +30,8 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
 
   // readonly
   _readyState : number = UNSENT;
-  _uriType : 'net' | 'file' = 'net';
   _response : any = '';
-  _responseText : any = '';
+  _responseText : any = null;
   _responseHeaders : any = {};
   _responseType : '' | 'arraybuffer' | 'blob'  | 'json' | 'text' = '';
   // TODO : not suppoted ATM
@@ -44,7 +42,6 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
   _timeout : number = 60000;
   _sendFlag : boolean = false;
   _uploadStarted : boolean = false;
-  _increment : boolean = false;
 
   // RNFetchBlob compatible data structure
   _config : RNFetchBlobConfig = {};
@@ -53,7 +50,6 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
   _headers: any = {
     'Content-Type' : 'text/plain'
   };
-  _cleanUp : () => void = null;
   _body: any;
 
   // RNFetchBlob promise object, which has `progress`, `uploadProgress`, and
@@ -133,8 +129,6 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
     this._method = method
     this._url = url
     this._headers = {}
-    this._increment = URIUtil.isJSONStreamURI(this._url)
-    this._url = this._url.replace(/^JSONStream\:\/\//, '')
     this._dispatchReadStateChange(XMLHttpRequest.OPENED)
   }
 
@@ -143,9 +137,7 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
    * @param  {any} body Body in RNfetchblob flavor
    */
   send(body) {
-
     this._body = body
-
     if(this._readyState !== XMLHttpRequest.OPENED)
       throw 'InvalidStateError : XMLHttpRequest is not opened yet.'
     let promise = Promise.resolve()
@@ -159,16 +151,9 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
       log.debug('sending blob body', body._blobCreated)
       promise = new Promise((resolve, reject) => {
           body.onCreated((blob) => {
-            // when the blob is derived (not created by RN developer), the blob
-            // will be released after XMLHttpRequest sent
-            if(blob.isDerived) {
-              this._cleanUp = () => {
-                blob.close()
-              }
-            }
-            log.debug('body created send request')
-            body = RNFetchBlob.wrap(blob.getRNFetchBlobRef())
-            resolve()
+              log.debug('body created send request')
+              body = RNFetchBlob.wrap(blob.getRNFetchBlobRef())
+              resolve()
           })
         })
     }
@@ -186,22 +171,19 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
       for(let h in _headers) {
         _headers[h] = _headers[h].toString()
       }
-
       this._task = RNFetchBlob
                     .config({
                       auto: true,
                       timeout : this._timeout,
-                      increment : this._increment,
                       binaryContentTypes : XMLHttpRequest.binaryContentTypes
                     })
                     .fetch(_method, _url, _headers, body)
       this._task
-          .stateChange(this._headerReceived)
-          .uploadProgress(this._uploadProgressEvent)
-          .progress(this._progressEvent)
-          .catch(this._onError)
-          .then(this._onDone)
-
+          .stateChange(this._headerReceived.bind(this))
+          .uploadProgress(this._uploadProgressEvent.bind(this))
+          .progress(this._progressEvent.bind(this))
+          .catch(this._onError.bind(this))
+          .then(this._onDone.bind(this))
     })
   }
 
@@ -274,10 +256,10 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
     return result.substr(0, result.length-2)
   }
 
-  _headerReceived = (e) => {
+  _headerReceived(e) {
     log.debug('header received ', this._task.taskId, e)
     this.responseURL = this._url
-    if(e.state === "2" && e.taskId === this._task.taskId) {
+    if(e.state === "2") {
       this._responseHeaders = e.headers
       this._statusText = e.status
       this._status = Math.floor(e.status)
@@ -285,7 +267,7 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
     }
   }
 
-  _uploadProgressEvent = (send:number, total:number) => {
+  _uploadProgressEvent(send:number, total:number) {
     if(!this._uploadStarted) {
       this.upload.dispatchEvent('loadstart')
       this._uploadStarted = true
@@ -295,7 +277,7 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
     this.upload.dispatchEvent('progress', new ProgressEvent(true, send, total))
   }
 
-  _progressEvent = (send:number, total:number, chunk:string) => {
+  _progressEvent(send:number, total:number) {
     log.verbose(this.readyState)
     if(this._readyState === XMLHttpRequest.HEADERS_RECEIVED)
       this._dispatchReadStateChange(XMLHttpRequest.LOADING)
@@ -303,14 +285,10 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
     if(total && total >= 0)
         lengthComputable = true
     let e = new ProgressEvent(lengthComputable, send, total)
-
-    if(this._increment) {
-      this._responseText += chunk
-    }
     this.dispatchEvent('progress', e)
   }
 
-  _onError = (err) => {
+  _onError(err) {
     let statusCode = Math.floor(this.status)
     if(statusCode >= 100 && statusCode !== 408) {
       return
@@ -331,7 +309,7 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
     this.clearEventListeners()
   }
 
-  _onDone = (resp) => {
+  _onDone(resp) {
     log.debug('XMLHttpRequest done', this._url, resp, this)
     this._statusText = this._status
     let responseDataReady = () => {
@@ -439,7 +417,7 @@ export default class XMLHttpRequest extends XMLHttpRequestEventTarget{
     return this._responseType
   }
 
-  static get isRNFBPolyfill() {
+  get isRNFBPolyfill() {
     return true
   }
 

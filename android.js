@@ -1,6 +1,7 @@
 // Copyright 2016 wkh237@github. All rights reserved.
 // Use of this source code is governed by a MIT-style license that can be
 // found in the LICENSE file.
+// @flow
 
 import {
   NativeModules,
@@ -21,26 +22,10 @@ function actionViewIntent(path:string, mime:string = 'text/plain') {
   if(Platform.OS === 'android')
     return RNFetchBlob.actionViewIntent(path, mime)
   else
-    return Promise.reject('RNFetchBlob.android.actionViewIntent only supports Android.')
-}
-
-function getContentIntent(mime:string) {
-  if(Platform.OS === 'android')
-    return RNFetchBlob.getContentIntent(mime)
-  else
-    return Promise.reject('RNFetchBlob.android.getContentIntent only supports Android.')
-}
-
-function addCompleteDownload(config) {
-  if(Platform.OS === 'android')
-    return RNFetchBlob.addCompleteDownload(config)
-  else
-    return Promise.reject('RNFetchBlob.android.addCompleteDownload only supports Android.')
+    return Promise.reject('RNFetchBlob.actionViewIntent only supports Android.')
 }
 
 
 export default {
-  actionViewIntent,
-  getContentIntent,
-  addCompleteDownload
+  actionViewIntent
 }
